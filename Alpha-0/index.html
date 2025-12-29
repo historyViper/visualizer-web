@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Visualizer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #0a0a0f; 
+            overflow: hidden;
+            font-family: system-ui, sans-serif;
+        }
+        #visualizer-canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        #ui-overlay {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 12px;
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 16px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: rgba(255,255,255,0.2);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="visualizer-canvas"></canvas>
+    
+    <div id="ui-overlay">
+        <div id="fps">FPS: --</div>
+        <div id="particles">Particles: --</div>
+        <div id="frame-time">Frame: --ms</div>
+    </div>
+    
+    <div id="controls">
+        <button id="btn-mic">🎤 Microphone</button>
+        <button id="btn-file">📁 Audio File</button>
+    </div>
+    
+    <script type="module" src="./app.js"></script>
+    <script>
+        // UI updates with null-chaining for robustness
+        setInterval(() => {
+            const app = window.app;
+            if (app) {
+                const frameTime = app.getAverageFrameTime?.() ?? 16.67;
+                const particleCount = app.particleSystem?.particleCount ?? 0;
+                
+                document.getElementById('fps').textContent = `FPS: ${Math.round(1000 / frameTime)}`;
+                document.getElementById('particles').textContent = `Particles: ${particleCount}`;
+                document.getElementById('frame-time').textContent = `Frame: ${frameTime.toFixed(2)}ms`;
+            }
+        }, 100);
+    </script>
+</body>
+</html>

@@ -1,182 +1,242 @@
+/**
+ * Audio Visualizer - Main Application Shell
+ * Single canvas, single RAF loop, visualizer module loader
+ */
 import { AudioAnalyzer } from './audio/analyzer.js';
+import { visualizers, getVisualizerById } from './vis/index.js';
 
-// Minimal test version - renders without full shader pipeline
 class VisualizerApp {
     constructor() {
         this.canvas = document.getElementById('visualizer-canvas');
-        this.gl = this.canvas.getContext('webgl2');
-        this.status = document.getElementById('status');
+        this.gl = null;
+        this.ctx2d = null;
         
-        if (!this.gl) {
-            this.setStatus('WebGL2 not supported');
-            return;
-        }
+        // Settings (shared, read by visualizers)
+        this.settings = {
+            // Color & Style
+            baseColor: '#00ff88',
+            gradientEnabled: false,
+            alphaGradient: 0,
+            bgColor: '#0a0a0f',
+            bgAlpha: 1,
+            glowAmount: 0,
+            // Performance
+            targetFPS: 60,
+            renderScale: 1.0,
+            maxDPR: 2,
+            autoQuality: false,
+            // Overlay
+            logoImage: null,
+            albumImage: null,
+            songTitle: '',
+            artist: '',
+            album: '',
+            overlayPosition: 'bottom-left'
+        };
         
         this.audio = new AudioAnalyzer();
-        this.particles = { particleCount: 0 };  // Placeholder for UI
+        this.currentVisualizer = null;
+        this.currentVisId = 'bars2d';
         
         this.frameTimes = [];
         this.lastTime = 0;
+        this.focusMode = false;
         
-        // Settings
-        this.settings = {
-            maxDPR: 2,
-            renderScale: 1.0
-        };
+        // Frequency/waveform buffers
+        this.frequencyData = null;
+        this.waveformData = null;
         
         this.init();
-    }
-
-    setStatus(msg) {
-        if (this.status) this.status.textContent = msg;
-        console.log('[Status]', msg);
     }
 
     async init() {
         this.resize();
         window.addEventListener('resize', () => this.resize());
         
-        this.setupShaders();
+        // Keyboard shortcut
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.toggleFocusMode();
+        });
         
-        // Setup UI
-        document.getElementById('btn-mic').onclick = () => this.startMic();
-        document.getElementById('btn-file').onclick = () => this.loadAudioFile();
+        this.setupUI();
+        this.loadVisualizer(this.currentVisId);
         
-        this.setStatus('Ready - Click Mic or File');
-        
-        // Start render loop
         this.lastTime = performance.now();
         this.render();
     }
 
-    setupShaders() {
-        const gl = this.gl;
+    setupUI() {
+        // Focus Mode toggle
+        const focusBtn = document.getElementById('focus-btn');
+        focusBtn?.addEventListener('click', () => this.toggleFocusMode());
         
-        // Simple fullscreen quad shader for audio visualization
-        const vsSource = `#version 300 es
-            in vec2 a_pos;
-            out vec2 v_uv;
-            void main() {
-                v_uv = a_pos * 0.5 + 0.5;
-                gl_Position = vec4(a_pos, 0.0, 1.0);
-            }`;
+        // Accordion toggles
+        document.querySelectorAll('.accordion-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const section = header.parentElement;
+                section.classList.toggle('open');
+            });
+        });
         
-        const fsSource = `#version 300 es
-            precision highp float;
-            in vec2 v_uv;
-            out vec4 fragColor;
-            
-            uniform float u_time;
-            uniform float u_audio;
-            uniform vec3 u_bands;  // bass, mid, treble
-            uniform vec2 u_res;
-            
-            void main() {
-                vec2 uv = v_uv;
-                vec2 p = (uv * 2.0 - 1.0);
-                p.x *= u_res.x / u_res.y;
-                
-                float r = length(p);
-                float a = atan(p.y, p.x);
-                
-                // Audio-reactive ring
-                float ring = exp(-pow((r - 0.4 - u_bands.x * 0.2) * 5.0, 2.0));
-                
-                // Spiral pattern
-                float spiral = sin(a * 6.0 - u_time * 2.0 + r * 10.0);
-                spiral = spiral * 0.5 + 0.5;
-                
-                // Color from audio bands
-                vec3 col = vec3(
-                    0.2 + u_bands.x * 0.8,
-                    0.1 + u_bands.y * 0.6,
-                    0.3 + u_bands.z * 0.7
-                );
-                
-                // Combine
-                float intensity = ring * (0.5 + spiral * 0.5) * (0.3 + u_audio * 0.7);
-                col *= intensity * 2.0;
-                
-                // Center glow
-                float glow = exp(-r * 3.0) * u_audio;
-                col += vec3(1.0, 0.8, 0.5) * glow;
-                
-                // Vignette
-                col *= 1.0 - r * 0.5;
-                
-                fragColor = vec4(col, 1.0);
-            }`;
+        // Audio controls
+        document.getElementById('btn-mic')?.addEventListener('click', () => this.startMic());
+        document.getElementById('btn-file')?.addEventListener('click', () => this.loadAudioFile());
         
-        // Compile shaders
-        const vs = this.compileShader(gl.VERTEX_SHADER, vsSource);
-        const fs = this.compileShader(gl.FRAGMENT_SHADER, fsSource);
-        
-        if (!vs || !fs) {
-            this.setStatus('Shader compile failed');
-            return;
+        // Visualizer selector
+        const visSel = document.getElementById('vis-select');
+        if (visSel) {
+            visualizers.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.id;
+                opt.textContent = v.name;
+                visSel.appendChild(opt);
+            });
+            visSel.value = this.currentVisId;
+            visSel.addEventListener('change', () => this.loadVisualizer(visSel.value));
         }
         
-        this.program = gl.createProgram();
-        gl.attachShader(this.program, vs);
-        gl.attachShader(this.program, fs);
-        gl.linkProgram(this.program);
-        
-        if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
-            this.setStatus('Shader link failed');
-            return;
+        // Color picker
+        const colorPicker = document.getElementById('base-color');
+        if (colorPicker) {
+            colorPicker.value = this.settings.baseColor;
+            colorPicker.addEventListener('input', (e) => this.settings.baseColor = e.target.value);
         }
         
-        // Get uniform locations
-        this.uniforms = {
-            time: gl.getUniformLocation(this.program, 'u_time'),
-            audio: gl.getUniformLocation(this.program, 'u_audio'),
-            bands: gl.getUniformLocation(this.program, 'u_bands'),
-            res: gl.getUniformLocation(this.program, 'u_res')
-        };
+        // Gradient toggle
+        const gradToggle = document.getElementById('gradient-toggle');
+        if (gradToggle) {
+            gradToggle.addEventListener('change', (e) => this.settings.gradientEnabled = e.target.checked);
+        }
         
-        // Fullscreen quad
-        this.vao = gl.createVertexArray();
-        gl.bindVertexArray(this.vao);
+        // Alpha gradient slider
+        const alphaSlider = document.getElementById('alpha-gradient');
+        if (alphaSlider) {
+            alphaSlider.addEventListener('input', (e) => this.settings.alphaGradient = parseFloat(e.target.value));
+        }
         
-        const buf = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-            -1, -1,  1, -1, -1, 1,
-            -1,  1,  1, -1,  1, 1
-        ]), gl.STATIC_DRAW);
+        // Background color
+        const bgPicker = document.getElementById('bg-color');
+        if (bgPicker) {
+            bgPicker.value = this.settings.bgColor;
+            bgPicker.addEventListener('input', (e) => this.settings.bgColor = e.target.value);
+        }
         
-        const loc = gl.getAttribLocation(this.program, 'a_pos');
-        gl.enableVertexAttribArray(loc);
-        gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+        // Glow slider
+        const glowSlider = document.getElementById('glow-amount');
+        if (glowSlider) {
+            glowSlider.addEventListener('input', (e) => this.settings.glowAmount = parseFloat(e.target.value));
+        }
         
-        this.setStatus('Shaders ready');
+        // Render scale
+        const scaleSlider = document.getElementById('render-scale');
+        if (scaleSlider) {
+            scaleSlider.value = this.settings.renderScale;
+            scaleSlider.addEventListener('input', (e) => {
+                this.settings.renderScale = parseFloat(e.target.value);
+                this.resize();
+            });
+        }
+        
+        // Text inputs
+        document.getElementById('song-title')?.addEventListener('input', (e) => this.settings.songTitle = e.target.value);
+        document.getElementById('artist')?.addEventListener('input', (e) => this.settings.artist = e.target.value);
+        document.getElementById('album-name')?.addEventListener('input', (e) => this.settings.album = e.target.value);
+        
+        // Position preset
+        document.getElementById('overlay-position')?.addEventListener('change', (e) => this.settings.overlayPosition = e.target.value);
+        
+        // Image uploads
+        document.getElementById('logo-upload')?.addEventListener('change', (e) => this.loadImage(e, 'logoImage'));
+        document.getElementById('album-upload')?.addEventListener('change', (e) => this.loadImage(e, 'albumImage'));
     }
 
-    compileShader(type, source) {
-        const gl = this.gl;
-        const shader = gl.createShader(type);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            console.error('Shader error:', gl.getShaderInfoLog(shader));
-            gl.deleteShader(shader);
-            return null;
+    loadImage(event, settingKey) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const img = new Image();
+        img.onload = () => {
+            this.settings[settingKey] = img;
+        };
+        img.src = URL.createObjectURL(file);
+    }
+
+    toggleFocusMode() {
+        this.focusMode = !this.focusMode;
+        document.body.classList.toggle('focus-mode', this.focusMode);
+        const focusBtn = document.getElementById('focus-btn');
+        if (focusBtn) {
+            focusBtn.classList.toggle('active', this.focusMode);
         }
-        return shader;
+    }
+
+    loadVisualizer(id) {
+        // Dispose current
+        if (this.currentVisualizer) {
+            this.currentVisualizer.dispose();
+            this.currentVisualizer = null;
+        }
+        
+        const vis = getVisualizerById(id);
+        if (!vis) {
+            this.setStatus('Visualizer not found: ' + id);
+            return;
+        }
+        
+        this.currentVisId = id;
+        
+        // Setup context based on type
+        if (vis.type === 'webgl2') {
+            this.ctx2d = null;
+            if (!this.gl) {
+                this.gl = this.canvas.getContext('webgl2', { alpha: false, antialias: false });
+            }
+            if (!this.gl) {
+                this.setStatus('WebGL2 not supported');
+                return;
+            }
+            vis.init({ gl: this.gl }, { audio: this.audio }, this.settings);
+        } else {
+            this.gl = null;
+            this.ctx2d = this.canvas.getContext('2d');
+            vis.init({ ctx2d: this.ctx2d }, { audio: this.audio }, this.settings);
+        }
+        
+        this.currentVisualizer = vis;
+        
+        // Initialize audio buffers
+        const fftSize = this.audio.analyser?.fftSize || 2048;
+        this.frequencyData = new Uint8Array(fftSize / 2);
+        this.waveformData = new Uint8Array(fftSize);
+        
+        this.resize();
+        this.setStatus('Loaded: ' + vis.name);
     }
 
     resize() {
-        // FIX: Clamp DPR to prevent accidental 4K on mobile
         const dpr = Math.min(devicePixelRatio, this.settings.maxDPR);
-        this.canvas.width = window.innerWidth * dpr * this.settings.renderScale;
-        this.canvas.height = window.innerHeight * dpr * this.settings.renderScale;
-        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        const scale = this.settings.renderScale;
+        this.canvas.width = window.innerWidth * dpr * scale;
+        this.canvas.height = window.innerHeight * dpr * scale;
+        
+        if (this.gl) {
+            this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        }
+        
+        if (this.currentVisualizer) {
+            this.currentVisualizer.resize(this.canvas.width, this.canvas.height, dpr, scale);
+        }
+    }
+
+    setStatus(msg) {
+        const el = document.getElementById('status');
+        if (el) el.textContent = msg;
     }
 
     async startMic() {
         try {
             await this.audio.init('microphone');
+            this.frequencyData = new Uint8Array(this.audio.analyser.frequencyBinCount);
+            this.waveformData = new Uint8Array(this.audio.analyser.fftSize);
             this.setStatus('Mic connected');
         } catch (e) {
             this.setStatus('Mic access denied');
@@ -190,51 +250,152 @@ class VisualizerApp {
         input.onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-            
             const audioEl = new Audio(URL.createObjectURL(file));
             audioEl.play();
             await this.audio.init(audioEl);
+            this.frequencyData = new Uint8Array(this.audio.analyser.frequencyBinCount);
+            this.waveformData = new Uint8Array(this.audio.analyser.fftSize);
             this.setStatus('Playing: ' + file.name);
+            
+            // Auto-fill song title from filename
+            if (!this.settings.songTitle) {
+                this.settings.songTitle = file.name.replace(/\.[^/.]+$/, '');
+                const titleInput = document.getElementById('song-title');
+                if (titleInput) titleInput.value = this.settings.songTitle;
+            }
         };
         input.click();
     }
 
     render() {
         const now = performance.now();
-        const deltaTime = (now - this.lastTime) / 1000;
+        const dt = (now - this.lastTime) / 1000;
         this.lastTime = now;
         
         // Track frame time
-        this.frameTimes.push(deltaTime * 1000);
+        this.frameTimes.push(dt * 1000);
         if (this.frameTimes.length > 60) this.frameTimes.shift();
         
-        const gl = this.gl;
-        
         // Get audio data
-        const audioLevel = this.audio.getLevel();
-        const bands = this.audio.getBands();
-        
-        // Render
-        if (this.program) {
-            gl.useProgram(this.program);
-            gl.bindVertexArray(this.vao);
-            
-            gl.uniform1f(this.uniforms.time, now * 0.001);
-            gl.uniform1f(this.uniforms.audio, audioLevel);
-            gl.uniform3f(this.uniforms.bands, bands.bass, bands.mid, bands.treble);
-            gl.uniform2f(this.uniforms.res, this.canvas.width, this.canvas.height);
-            
-            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        if (this.audio.analyser) {
+            this.audio.analyser.getByteFrequencyData(this.frequencyData);
+            this.audio.analyser.getByteTimeDomainData(this.waveformData);
         }
         
+        const audioFrame = {
+            level: this.audio.getLevel(),
+            bands: this.audio.getBands(),
+            frequencyData: this.frequencyData,
+            waveformData: this.waveformData
+        };
+        
+        // Clear canvas
+        if (this.gl) {
+            const c = this._hexToRgb(this.settings.bgColor);
+            this.gl.clearColor(c.r, c.g, c.b, this.settings.bgAlpha);
+            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+        } else if (this.ctx2d) {
+            this.ctx2d.fillStyle = this.settings.bgColor;
+            this.ctx2d.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+        
+        // Update & render visualizer
+        if (this.currentVisualizer) {
+            this.currentVisualizer.update(dt, audioFrame);
+            this.currentVisualizer.render();
+        }
+        
+        // Draw overlay (text & images) - 2D only
+        this.drawOverlay();
+        
         requestAnimationFrame(() => this.render());
+    }
+
+    drawOverlay() {
+        // For WebGL, we need a separate 2D overlay canvas
+        // For simplicity, skip overlay on WebGL for now (can add overlay canvas later)
+        if (!this.ctx2d) return;
+        
+        const ctx = this.ctx2d;
+        const s = this.settings;
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        
+        // Calculate position
+        let x, y, align;
+        const margin = 30;
+        
+        switch (s.overlayPosition) {
+            case 'top-left': x = margin; y = margin; align = 'left'; break;
+            case 'top-center': x = w / 2; y = margin; align = 'center'; break;
+            case 'top-right': x = w - margin; y = margin; align = 'right'; break;
+            case 'bottom-left': x = margin; y = h - margin - 80; align = 'left'; break;
+            case 'bottom-center': x = w / 2; y = h - margin - 80; align = 'center'; break;
+            case 'bottom-right': x = w - margin; y = h - margin - 80; align = 'right'; break;
+            default: x = margin; y = h - margin - 80; align = 'left';
+        }
+        
+        ctx.save();
+        ctx.textAlign = align;
+        
+        // Draw album art
+        if (s.albumImage) {
+            const imgSize = 80;
+            let imgX = x;
+            if (align === 'center') imgX = x - imgSize / 2;
+            else if (align === 'right') imgX = x - imgSize;
+            ctx.drawImage(s.albumImage, imgX, y, imgSize, imgSize);
+            if (align === 'left') x += imgSize + 15;
+            else if (align === 'right') x -= imgSize + 15;
+        }
+        
+        // Draw logo (small, offset)
+        if (s.logoImage) {
+            const logoSize = 40;
+            ctx.drawImage(s.logoImage, w - logoSize - 20, 20, logoSize, logoSize);
+        }
+        
+        // Draw text
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        ctx.shadowBlur = 4;
+        
+        if (s.songTitle) {
+            ctx.font = 'bold 24px system-ui, sans-serif';
+            ctx.fillText(s.songTitle, x, y + 30);
+        }
+        
+        if (s.artist) {
+            ctx.font = '18px system-ui, sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.fillText(s.artist, x, y + 55);
+        }
+        
+        if (s.album) {
+            ctx.font = '14px system-ui, sans-serif';
+            ctx.fillStyle = 'rgba(255,255,255,0.6)';
+            ctx.fillText(s.album, x, y + 75);
+        }
+        
+        ctx.restore();
     }
 
     getAverageFrameTime() {
         if (this.frameTimes.length === 0) return 16.67;
         return this.frameTimes.reduce((a, b) => a + b) / this.frameTimes.length;
     }
+
+    // Used by particleSystem reference in UI
+    get particleSystem() {
+        return { particleCount: this.currentVisualizer ? 1 : 0 };
+    }
+
+    _hexToRgb(hex) {
+        const r = parseInt(hex.slice(1, 3), 16) / 255;
+        const g = parseInt(hex.slice(3, 5), 16) / 255;
+        const b = parseInt(hex.slice(5, 7), 16) / 255;
+        return { r, g, b };
+    }
 }
 
-// Export for UI access
 window.app = new VisualizerApp();
