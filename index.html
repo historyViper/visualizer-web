@@ -13,10 +13,28 @@
             color: #fff;
         }
         
-        #visualizer-canvas {
+        /* Dual Canvas Container */
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100vw;
             height: 100vh;
-            display: block;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+        #canvas-wrapper {
+            position: relative;
+        }
+        #canvas-wrapper canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #overlay-canvas {
+            pointer-events: none;
         }
         
         /* Focus Mode Button */
@@ -68,18 +86,11 @@
             transition: transform 0.3s ease;
         }
         
-        /* Focus Mode: Slide panel off */
-        body.focus-mode #controls-panel {
-            transform: translateX(-320px);
-        }
-        body.focus-mode #ui-overlay {
-            opacity: 0.3;
-        }
+        body.focus-mode #controls-panel { transform: translateX(-320px); }
+        body.focus-mode #ui-overlay { opacity: 0.3; }
         
         /* Accordion */
-        .accordion-section {
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
+        .accordion-section { border-bottom: 1px solid rgba(255,255,255,0.05); }
         .accordion-header {
             padding: 12px 15px;
             background: rgba(255,255,255,0.02);
@@ -99,19 +110,12 @@
             transition: transform 0.2s;
         }
         .accordion-section.open .accordion-header::after { transform: rotate(90deg); }
-        
-        .accordion-content {
-            display: none;
-            padding: 12px 15px;
-        }
+        .accordion-content { display: none; padding: 12px 15px; }
         .accordion-section.open .accordion-content { display: block; }
         
         /* Form Controls */
-        .control-row {
-            margin-bottom: 12px;
-        }
+        .control-row { margin-bottom: 12px; }
         .control-row:last-child { margin-bottom: 0; }
-        
         .control-row label {
             display: block;
             font-size: 11px;
@@ -150,8 +154,8 @@
         }
         
         input[type="color"] {
-            width: 40px;
-            height: 30px;
+            width: 32px;
+            height: 24px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
@@ -169,9 +173,13 @@
             gap: 10px;
             align-items: center;
         }
-        .inline-row label {
-            margin-bottom: 0;
-            flex: 1;
+        .inline-row label { margin-bottom: 0; flex: 1; }
+        
+        .color-stops {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 6px;
         }
         
         button {
@@ -184,17 +192,11 @@
             font-size: 12px;
             transition: all 0.2s;
         }
-        button:hover {
-            background: rgba(0,255,136,0.25);
-        }
+        button:hover { background: rgba(0,255,136,0.25); }
         
-        .btn-row {
-            display: flex;
-            gap: 8px;
-        }
+        .btn-row { display: flex; gap: 8px; }
         .btn-row button { flex: 1; }
         
-        /* Status */
         #status {
             padding: 10px 15px;
             font-size: 11px;
@@ -202,14 +204,21 @@
             border-top: 1px solid rgba(255,255,255,0.05);
         }
         
-        /* Scrollbar */
         #controls-panel::-webkit-scrollbar { width: 6px; }
         #controls-panel::-webkit-scrollbar-track { background: transparent; }
         #controls-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        
+        input[type="file"] { font-size: 10px; }
     </style>
 </head>
 <body>
-    <canvas id="visualizer-canvas"></canvas>
+    <!-- Dual Canvas System -->
+    <div id="canvas-container">
+        <div id="canvas-wrapper">
+            <!-- Main canvas created dynamically by app.js -->
+            <canvas id="overlay-canvas"></canvas>
+        </div>
+    </div>
     
     <!-- Focus Mode Button -->
     <button id="focus-btn" title="Focus Mode (ESC)">
@@ -222,6 +231,7 @@
     <div id="ui-overlay">
         <div id="fps">FPS: --</div>
         <div id="frame-time">Frame: --ms</div>
+        <div id="resolution">--</div>
     </div>
     
     <!-- Controls Panel -->
@@ -245,28 +255,148 @@
                     <label>Type</label>
                     <select id="vis-select"></select>
                 </div>
+                <div class="control-row">
+                    <label>Bar Mode</label>
+                    <select id="bar-mode">
+                        <option value="solid">Solid</option>
+                        <option value="blocks">Blocks</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label>Segment Height: <span id="seg-height-val">8</span></label>
+                    <input type="range" id="seg-height" min="4" max="20" step="1" value="8">
+                </div>
+                <div class="control-row">
+                    <label>Segment Gap: <span id="seg-gap-val">2</span></label>
+                    <input type="range" id="seg-gap" min="1" max="6" step="1" value="2">
+                </div>
+                <div class="control-row inline-row">
+                    <label>Rounded Blocks</label>
+                    <input type="checkbox" id="rounded-blocks">
+                </div>
             </div>
         </div>
         
-        <!-- Color & Style Section -->
+        <!-- Canvas Section -->
         <div class="accordion-section">
-            <div class="accordion-header">Color & Style</div>
+            <div class="accordion-header">Canvas</div>
+            <div class="accordion-content">
+                <div class="control-row">
+                    <label>Aspect Ratio</label>
+                    <select id="aspect-ratio">
+                        <option value="fit">Fit Window</option>
+                        <option value="16:9">16:9 (Landscape)</option>
+                        <option value="9:16">9:16 (Portrait)</option>
+                        <option value="1:1">1:1 (Square)</option>
+                        <option value="4:3">4:3</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label>Quality (Max 4K): <span id="quality-val">1080p</span></label>
+                    <input type="range" id="quality-scale" min="0.25" max="1" step="0.05" value="0.5">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Frequency Mapping Section -->
+        <div class="accordion-section">
+            <div class="accordion-header">Frequency</div>
+            <div class="accordion-content">
+                <div class="control-row">
+                    <label>Freq Min (Hz): <span id="freq-min-val">30</span></label>
+                    <input type="range" id="freq-min" min="10" max="200" step="5" value="30">
+                </div>
+                <div class="control-row">
+                    <label>Freq Max (Hz): <span id="freq-max-val">16000</span></label>
+                    <input type="range" id="freq-max" min="8000" max="20000" step="500" value="16000">
+                </div>
+                <div class="control-row">
+                    <label>Log Curve: <span id="log-curve-val">1.0</span></label>
+                    <input type="range" id="log-curve" min="0.5" max="2" step="0.1" value="1">
+                </div>
+                <div class="control-row">
+                    <label>Bass Tame: <span id="bass-tame-val">0.6</span></label>
+                    <input type="range" id="bass-tame" min="0" max="1" step="0.05" value="0.6">
+                </div>
+                <div class="control-row">
+                    <label>Smoothing: <span id="smoothing-val">0.75</span></label>
+                    <input type="range" id="smoothing" min="0" max="0.95" step="0.05" value="0.75">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Color Gradient Section -->
+        <div class="accordion-section">
+            <div class="accordion-header">Color Gradient</div>
             <div class="accordion-content">
                 <div class="control-row inline-row">
-                    <label>Base Color</label>
+                    <label>Enable Gradient</label>
+                    <input type="checkbox" id="gradient-toggle">
+                </div>
+                <div class="control-row">
+                    <label>Gradient Stops</label>
+                    <select id="gradient-stops">
+                        <option value="2">2 Colors</option>
+                        <option value="3">3 Colors</option>
+                        <option value="4">4 Colors</option>
+                        <option value="5">5 Colors</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label>Colors</label>
+                    <div class="color-stops" id="color-stops-container">
+                        <input type="color" id="color-stop-0" value="#00ff88">
+                        <input type="color" id="color-stop-1" value="#0088ff">
+                        <input type="color" id="color-stop-2" value="#ff0088" style="display:none">
+                        <input type="color" id="color-stop-3" value="#ffff00" style="display:none">
+                        <input type="color" id="color-stop-4" value="#ff0000" style="display:none">
+                    </div>
+                </div>
+                <div class="control-row">
+                    <label>Gradient Mode</label>
+                    <select id="gradient-mode">
+                        <option value="linear">Linear (Bottom→Top)</option>
+                        <option value="radial">Radial (Inner→Outer)</option>
+                        <option value="angular">Angular</option>
+                    </select>
+                </div>
+                <div class="control-row">
+                    <label>Gradient Scalar: <span id="grad-scalar-val">1.0</span></label>
+                    <input type="range" id="grad-scalar" min="0.2" max="3" step="0.1" value="1">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Alpha Gradient Section -->
+        <div class="accordion-section">
+            <div class="accordion-header">Alpha Gradient</div>
+            <div class="accordion-content">
+                <div class="control-row">
+                    <label>Alpha Start: <span id="alpha-start-val">1.0</span></label>
+                    <input type="range" id="alpha-start" min="0" max="1" step="0.05" value="1">
+                </div>
+                <div class="control-row">
+                    <label>Alpha End: <span id="alpha-end-val">0.3</span></label>
+                    <input type="range" id="alpha-end" min="0" max="1" step="0.05" value="0.3">
+                </div>
+                <div class="control-row">
+                    <label>Alpha Scalar: <span id="alpha-scalar-val">1.0</span></label>
+                    <input type="range" id="alpha-scalar" min="0.1" max="3" step="0.1" value="1">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Style Section -->
+        <div class="accordion-section">
+            <div class="accordion-header">Style</div>
+            <div class="accordion-content">
+                <div class="control-row inline-row">
+                    <label>Base Color (Solid)</label>
                     <input type="color" id="base-color" value="#00ff88">
                 </div>
                 <div class="control-row inline-row">
                     <label>Background</label>
                     <input type="color" id="bg-color" value="#0a0a0f">
-                </div>
-                <div class="control-row inline-row">
-                    <label>Gradient</label>
-                    <input type="checkbox" id="gradient-toggle">
-                </div>
-                <div class="control-row">
-                    <label>Alpha Gradient: <span id="alpha-val">0</span></label>
-                    <input type="range" id="alpha-gradient" min="0" max="1" step="0.05" value="0">
                 </div>
                 <div class="control-row">
                     <label>Glow: <span id="glow-val">0</span></label>
@@ -300,6 +430,7 @@
                         <option value="bottom-left" selected>Bottom Left</option>
                         <option value="bottom-center">Bottom Center</option>
                         <option value="bottom-right">Bottom Right</option>
+                        <option value="center">Center (Logo)</option>
                     </select>
                 </div>
                 <div class="control-row">
@@ -307,19 +438,43 @@
                     <input type="file" id="logo-upload" accept="image/*">
                 </div>
                 <div class="control-row">
+                    <label>Logo Size: <span id="logo-size-val">60</span>px</label>
+                    <input type="range" id="logo-size" min="20" max="120" step="5" value="60">
+                </div>
+                <div class="control-row">
                     <label>Album Art</label>
                     <input type="file" id="album-upload" accept="image/*">
+                </div>
+                <div class="control-row">
+                    <label>Album Art Size: <span id="album-size-val">100</span>px</label>
+                    <input type="range" id="album-size" min="30" max="250" step="10" value="100">
                 </div>
             </div>
         </div>
         
-        <!-- Performance Section -->
+        <!-- Audio Dynamics Section -->
         <div class="accordion-section">
-            <div class="accordion-header">Performance</div>
+            <div class="accordion-header">Audio Dynamics</div>
             <div class="accordion-content">
                 <div class="control-row">
-                    <label>Render Scale: <span id="scale-val">1.0</span></label>
-                    <input type="range" id="render-scale" min="0.5" max="1" step="0.1" value="1">
+                    <label>Gain: <span id="gain-val">1.5</span></label>
+                    <input type="range" id="audio-gain" min="0.5" max="4" step="0.1" value="1.5">
+                </div>
+                <div class="control-row">
+                    <label>Compression: <span id="compress-val">0.8</span></label>
+                    <input type="range" id="audio-compress" min="0.6" max="1.2" step="0.05" value="0.8">
+                </div>
+                <div class="control-row">
+                    <label>Tilt (High Boost): <span id="tilt-val">0.3</span></label>
+                    <input type="range" id="audio-tilt" min="0" max="0.8" step="0.05" value="0.3">
+                </div>
+                <div class="control-row">
+                    <label>Attack: <span id="attack-val">0.8</span></label>
+                    <input type="range" id="audio-attack" min="0.3" max="1" step="0.05" value="0.8">
+                </div>
+                <div class="control-row">
+                    <label>Release: <span id="release-val">0.92</span></label>
+                    <input type="range" id="audio-release" min="0.8" max="0.98" step="0.01" value="0.92">
                 </div>
             </div>
         </div>
@@ -330,7 +485,6 @@
     
     <script type="module" src="./app.js"></script>
     <script>
-        // UI Updates
         setInterval(() => {
             const app = window.app;
             if (app) {
@@ -339,17 +493,6 @@
                 document.getElementById('frame-time').textContent = `Frame: ${ft.toFixed(2)}ms`;
             }
         }, 200);
-        
-        // Slider value displays
-        document.getElementById('alpha-gradient')?.addEventListener('input', (e) => {
-            document.getElementById('alpha-val').textContent = e.target.value;
-        });
-        document.getElementById('glow-amount')?.addEventListener('input', (e) => {
-            document.getElementById('glow-val').textContent = e.target.value;
-        });
-        document.getElementById('render-scale')?.addEventListener('input', (e) => {
-            document.getElementById('scale-val').textContent = e.target.value;
-        });
     </script>
 </body>
 </html>

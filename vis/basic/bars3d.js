@@ -1,5 +1,5 @@
 /**
- * 3D Spectrum Bars Visualizer (WebGL2 Instanced)
+ * 3D Spectrum Bars Visualizer (WebGL2 Instanced) - uses logarithmic frequency mapping
  */
 export const Bars3D = {
     id: 'bars3d',
@@ -8,20 +8,22 @@ export const Bars3D = {
     
     _gl: null,
     _settings: null,
+    _audio: null,
     _width: 0,
     _height: 0,
     _program: null,
     _vao: null,
     _instanceBuffer: null,
     _barCount: 32,
-    _smoothedData: null,
+    _instanceData: null,
     _time: 0,
+    _audioParams: null,
     
     init(ctx, services, settings) {
         this._gl = ctx.gl;
         this._settings = settings;
-        this._smoothedData = new Float32Array(this._barCount);
-        this._instanceData = new Float32Array(this._barCount * 4); // x, y, z, height
+        this._audio = services.audio;
+        this._instanceData = new Float32Array(this._barCount * 4);
         
         this._setupShaders();
         this._setupGeometry();
@@ -33,12 +35,11 @@ export const Bars3D = {
         const vsSource = `#version 300 es
             layout(location=0) in vec3 a_pos;
             layout(location=1) in vec3 a_normal;
-            layout(location=2) in vec4 a_instance; // x, y, z, height
+            layout(location=2) in vec4 a_instance;
             
             uniform mat4 u_proj;
             uniform mat4 u_view;
             uniform vec3 u_baseColor;
-            uniform float u_time;
             
             out vec3 v_normal;
             out vec3 v_color;
@@ -46,12 +47,12 @@ export const Bars3D = {
             
             void main() {
                 vec3 pos = a_pos;
-                pos.y *= a_instance.w; // Scale by height
+                pos.y *= a_instance.w;
                 pos += a_instance.xyz;
                 
                 gl_Position = u_proj * u_view * vec4(pos, 1.0);
                 v_normal = a_normal;
-                v_height = a_instance.w;
+                v_height = a_instance.w / 5.0;
                 v_color = u_baseColor;
             }`;
         
@@ -68,17 +69,11 @@ export const Bars3D = {
             out vec4 fragColor;
             
             void main() {
-                // Simple directional lighting
                 vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
                 float diff = max(dot(v_normal, lightDir), 0.0);
-                float ambient = 0.3;
                 
-                vec3 col = v_color * (ambient + diff * 0.7);
-                
-                // Height-based brightness
+                vec3 col = v_color * (0.3 + diff * 0.7);
                 col *= 0.5 + v_height * 0.5;
-                
-                // Glow boost
                 col += v_color * u_glowAmount * v_height * 0.5;
                 
                 float alpha = 1.0 - u_alphaGradient * (1.0 - v_height);
@@ -97,7 +92,6 @@ export const Bars3D = {
             proj: gl.getUniformLocation(this._program, 'u_proj'),
             view: gl.getUniformLocation(this._program, 'u_view'),
             baseColor: gl.getUniformLocation(this._program, 'u_baseColor'),
-            time: gl.getUniformLocation(this._program, 'u_time'),
             glowAmount: gl.getUniformLocation(this._program, 'u_glowAmount'),
             alphaGradient: gl.getUniformLocation(this._program, 'u_alphaGradient')
         };
@@ -117,21 +111,15 @@ export const Bars3D = {
     _setupGeometry() {
         const gl = this._gl;
         
-        // Unit box vertices with normals
         const boxVerts = new Float32Array([
-            // Front
             -0.5,0,0.5, 0,0,1,  0.5,0,0.5, 0,0,1,  0.5,1,0.5, 0,0,1,
             -0.5,0,0.5, 0,0,1,  0.5,1,0.5, 0,0,1, -0.5,1,0.5, 0,0,1,
-            // Back
             0.5,0,-0.5, 0,0,-1, -0.5,0,-0.5, 0,0,-1, -0.5,1,-0.5, 0,0,-1,
             0.5,0,-0.5, 0,0,-1, -0.5,1,-0.5, 0,0,-1,  0.5,1,-0.5, 0,0,-1,
-            // Right
             0.5,0,0.5, 1,0,0,  0.5,0,-0.5, 1,0,0,  0.5,1,-0.5, 1,0,0,
             0.5,0,0.5, 1,0,0,  0.5,1,-0.5, 1,0,0,  0.5,1,0.5, 1,0,0,
-            // Left
             -0.5,0,-0.5, -1,0,0, -0.5,0,0.5, -1,0,0, -0.5,1,0.5, -1,0,0,
             -0.5,0,-0.5, -1,0,0, -0.5,1,0.5, -1,0,0, -0.5,1,-0.5, -1,0,0,
-            // Top
             -0.5,1,0.5, 0,1,0,  0.5,1,0.5, 0,1,0,  0.5,1,-0.5, 0,1,0,
             -0.5,1,0.5, 0,1,0,  0.5,1,-0.5, 0,1,0, -0.5,1,-0.5, 0,1,0,
         ]);
@@ -139,7 +127,6 @@ export const Bars3D = {
         this._vao = gl.createVertexArray();
         gl.bindVertexArray(this._vao);
         
-        // Geometry buffer
         const geomBuf = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, geomBuf);
         gl.bufferData(gl.ARRAY_BUFFER, boxVerts, gl.STATIC_DRAW);
@@ -149,7 +136,6 @@ export const Bars3D = {
         gl.enableVertexAttribArray(1);
         gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
         
-        // Instance buffer - preallocate
         this._instanceBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this._instanceBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, this._instanceData.byteLength, gl.DYNAMIC_DRAW);
@@ -171,30 +157,20 @@ export const Bars3D = {
     
     update(dt, audioFrame) {
         this._time += dt;
+        this._audioParams = audioFrame.audioParams;
         
-        const freq = audioFrame.frequencyData;
-        if (!freq) return;
+        // Get log-mapped bands from analyzer
+        const bands = this._audio.getLogBands(this._barCount, this._audioParams);
         
-        const binSize = Math.floor(freq.length / this._barCount);
-        for (let i = 0; i < this._barCount; i++) {
-            let sum = 0;
-            for (let j = 0; j < binSize; j++) {
-                sum += freq[i * binSize + j] / 255;
-            }
-            const target = sum / binSize;
-            this._smoothedData[i] += (target - this._smoothedData[i]) * 0.3;
-        }
-        
-        // Update instance data
         const spacing = 1.2;
         const startX = -((this._barCount - 1) * spacing) / 2;
         
         for (let i = 0; i < this._barCount; i++) {
             const idx = i * 4;
-            this._instanceData[idx] = startX + i * spacing;     // x
-            this._instanceData[idx + 1] = 0;                     // y
-            this._instanceData[idx + 2] = 0;                     // z
-            this._instanceData[idx + 3] = this._smoothedData[i] * 5 + 0.1; // height
+            this._instanceData[idx] = startX + i * spacing;
+            this._instanceData[idx + 1] = 0;
+            this._instanceData[idx + 2] = 0;
+            this._instanceData[idx + 3] = bands[i] * 5 + 0.1;
         }
     },
     
@@ -208,25 +184,17 @@ export const Bars3D = {
         
         gl.useProgram(this._program);
         
-        // Upload instance data with bufferSubData
         gl.bindBuffer(gl.ARRAY_BUFFER, this._instanceBuffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, this._instanceData);
         
-        // Matrices
         const proj = this._perspective(45 * Math.PI / 180, this._aspect, 0.1, 100);
-        const view = this._lookAt(
-            [0, 8, 25],
-            [0, 2, 0],
-            [0, 1, 0]
-        );
+        const view = this._lookAt([0, 8, 25], [0, 2, 0], [0, 1, 0]);
         
         gl.uniformMatrix4fv(this._uniforms.proj, false, proj);
         gl.uniformMatrix4fv(this._uniforms.view, false, view);
         
-        // Parse color
         const col = this._hexToRgb(s.baseColor || '#00ff88');
         gl.uniform3f(this._uniforms.baseColor, col.r, col.g, col.b);
-        gl.uniform1f(this._uniforms.time, this._time);
         gl.uniform1f(this._uniforms.glowAmount, s.glowAmount || 0);
         gl.uniform1f(this._uniforms.alphaGradient, s.alphaGradient || 0);
         
@@ -241,9 +209,9 @@ export const Bars3D = {
         if (this._vao) gl.deleteVertexArray(this._vao);
         if (this._instanceBuffer) gl.deleteBuffer(this._instanceBuffer);
         if (this._program) gl.deleteProgram(this._program);
+        this._audio = null;
     },
     
-    // Math helpers
     _hexToRgb(hex) {
         const r = parseInt(hex.slice(1, 3), 16) / 255;
         const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -278,11 +246,9 @@ export const Bars3D = {
         const len = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
         return [v[0]/len, v[1]/len, v[2]/len];
     },
-    
     _cross(a, b) {
         return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
     },
-    
     _dot(a, b) {
         return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
     }

@@ -7,12 +7,23 @@ import { Wave2D } from './basic/wave2d.js';
 import { Bars3D } from './basic/bars3d.js';
 import { Circle3D } from './basic/circle3d.js';
 
+// Math visualizers
+import { Lorenz } from './math/lorenz.js';
+import { Spiral } from './math/spiral.js';
+import { Mandelbrot } from './math/mandelbrot.js';
+import { Parabola } from './math/parabola.js';
+
 export const visualizers = [
     Bars2D,
     Circle2D,
     Wave2D,
     Bars3D,
-    Circle3D
+    Circle3D,
+    // Math
+    Lorenz,
+    Spiral,
+    Mandelbrot,
+    Parabola
 ];
 
 export function getVisualizerById(id) {
