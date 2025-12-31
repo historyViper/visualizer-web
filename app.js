@@ -47,6 +47,10 @@ class VisualizerApp {
       segmentGap: 2,
       roundedBlocks: false,
 
+      // Plasma/Lightning settings
+      plasmaMode: 'arcs',      // 'arcs' | 'ball'
+      plasmaColorMode: 'cycle', // 'fixed' | 'gradient' | 'cycle' | 'random'
+
       // Audio / Frequency mapping
       freqMin: 30,
       freqMax: 16000,
@@ -207,6 +211,10 @@ class VisualizerApp {
     this._bindSlider('seg-height', 'segmentHeight', 'seg-height-val');
     this._bindSlider('seg-gap', 'segmentGap', 'seg-gap-val');
     this._bindCheckbox('rounded-blocks', 'roundedBlocks');
+
+    // Plasma settings
+    this._bindSelect('plasma-mode', 'plasmaMode');
+    this._bindSelect('plasma-color-mode', 'plasmaColorMode');
 
     // Color & Style bindings (existing)
     this._bindInput('base-color', 'baseColor', 'value');

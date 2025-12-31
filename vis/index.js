@@ -3,7 +3,7 @@
  */
 import { Bars2D } from './basic/bars2d.js';
 import { Circle2D } from './basic/circle2d.js';
-import { Wave2D } from './basic/wave2d.js';
+import { Plasma2D } from './basic/plasma2d.js';
 import { Bars3D } from './basic/bars3d.js';
 import { Circle3D } from './basic/circle3d.js';
 
@@ -16,7 +16,7 @@ import { Parabola } from './math/parabola.js';
 export const visualizers = [
     Bars2D,
     Circle2D,
-    Wave2D,
+    Plasma2D,
     Bars3D,
     Circle3D,
     // Math
