@@ -50,16 +50,16 @@ class VisualizerApp {
       // Audio / Frequency mapping
       freqMin: 30,
       freqMax: 16000,
-      logCurve: 1.0,
-      bassTame: 0.6,
-      smoothing: 0.75,
+      logCurve: 2.0,
+      bassTame: 0,
+      smoothing: 0,
 
       // Audio dynamics
-      gain: 1.5,
-      compress: 0.8,
-      tilt: 0.3,
-      attack: 0.8,
-      release: 0.92,
+      gain: 4,
+      compress: 0.6,
+      tilt: 0.8,
+      attack: 1,
+      release: 0.8,
 
       // Performance
       targetFPS: 60,

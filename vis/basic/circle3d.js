@@ -216,10 +216,12 @@ export const Circle3D = {
         gl.uniformMatrix4fv(this._uniforms.proj, false, proj);
         gl.uniformMatrix4fv(this._uniforms.view, false, view);
         
-        const col = this._hexToRgb(s.baseColor || '#00ff88');
+        const col = this._hexToRgb(s.gradientEnabled ? s.colorStops[0] : (s.baseColor || '#00ff88'));
         gl.uniform3f(this._uniforms.baseColor, col.r, col.g, col.b);
         gl.uniform1f(this._uniforms.glowAmount, s.glowAmount || 0);
-        gl.uniform1f(this._uniforms.alphaGradient, s.alphaGradient || 0);
+        // Use new alpha settings
+        const alphaGrad = s.alphaStart !== undefined ? (s.alphaStart - s.alphaEnd) * s.alphaScalar : (s.alphaGradient || 0);
+        gl.uniform1f(this._uniforms.alphaGradient, alphaGrad);
         
         gl.bindVertexArray(this._vao);
         gl.drawArraysInstanced(gl.TRIANGLES, 0, this._vertexCount, this._barCount);
