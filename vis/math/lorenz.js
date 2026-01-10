@@ -15,7 +15,7 @@ export const Lorenz = {
     
     // Lorenz state
     _points: [],
-    _maxPoints: 5000,
+    _maxPoints: 1500,
     _x: 0.1,
     _y: 0,
     _z: 0,
@@ -42,6 +42,8 @@ export const Lorenz = {
     
     update(dt, audioFrame) {
         this._audioParams = audioFrame.audioParams;
+        if (!this._audioParams) return;
+        
         const bands = this._audio.getLogBands(8, this._audioParams);
         
         // Modulate Lorenz parameters with audio
@@ -95,32 +97,30 @@ export const Lorenz = {
         
         ctx.lineWidth = 1.5;
         ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
         
-        // Draw trail with gradient
-        for (let i = 1; i < this._points.length; i++) {
-            const p0 = this._points[i - 1];
-            const p1 = this._points[i];
-            const t = i / this._points.length;
-            
-            // Project 3D to 2D (simple orthographic with slight rotation based on z)
-            const x0 = cx + p0.x * scale;
-            const y0 = cy - p0.z * scale + p0.y * scale * 0.3;
-            const x1 = cx + p1.x * scale;
-            const y1 = cy - p1.z * scale + p1.y * scale * 0.3;
+        // Batch draw - group by similar colors for better perf
+        const batchSize = 50;
+        for (let batch = 0; batch < this._points.length; batch += batchSize) {
+            const end = Math.min(batch + batchSize, this._points.length);
+            const t = batch / this._points.length;
             
             if (s.gradientEnabled && s.gradientStops >= 2) {
                 const colorIndex = Math.floor(t * (s.gradientStops - 1));
-                const nextIndex = Math.min(colorIndex + 1, s.gradientStops - 1);
-                const localT = (t * (s.gradientStops - 1)) - colorIndex;
-                const color = this._lerpColor(s.colorStops[colorIndex], s.colorStops[nextIndex], localT);
+                const color = s.colorStops[Math.min(colorIndex, s.colorStops.length - 1)];
                 ctx.strokeStyle = this._hexToRgba(color, t * 0.8 + 0.2);
             } else {
                 ctx.strokeStyle = this._hexToRgba(s.baseColor, t * 0.8 + 0.2);
             }
             
             ctx.beginPath();
-            ctx.moveTo(x0, y0);
-            ctx.lineTo(x1, y1);
+            const p0 = this._points[batch];
+            ctx.moveTo(cx + p0.x * scale, cy - p0.z * scale + p0.y * scale * 0.3);
+            
+            for (let i = batch + 1; i < end; i++) {
+                const p = this._points[i];
+                ctx.lineTo(cx + p.x * scale, cy - p.z * scale + p.y * scale * 0.3);
+            }
             ctx.stroke();
         }
         

@@ -13,11 +13,14 @@ export const Circle2D = {
     _height: 0,
     _barCount: 64,
     _audioParams: null,
+    _time: 0,
+    _hueOffset: 0,
     
     init(ctx, services, settings) {
         this._ctx = ctx.ctx2d;
         this._settings = settings;
         this._audio = services.audio;
+        this._hueOffset = Math.random() * 360;
     },
     
     resize(w, h) {
@@ -27,6 +30,27 @@ export const Circle2D = {
     
     update(dt, audioFrame) {
         this._audioParams = audioFrame.audioParams;
+        this._time += dt;
+        this._hueOffset = (this._hueOffset + dt * 30) % 360;
+    },
+    
+    _getColorForPosition(t, index) {
+        const s = this._settings;
+        const colorMode = s.colorMode || 'fixed';
+        
+        if (colorMode === 'gradient' && s.gradientStops >= 2) {
+            const colorIndex = Math.floor(t * (s.gradientStops - 1));
+            const nextIndex = Math.min(colorIndex + 1, s.gradientStops - 1);
+            const localT = (t * (s.gradientStops - 1)) - colorIndex;
+            return this._lerpColor(s.colorStops[colorIndex], s.colorStops[nextIndex], localT);
+        } else if (colorMode === 'cycle') {
+            const hue = (this._hueOffset + index * 5 + t * 60) % 360;
+            return `hsl(${hue}, 100%, 55%)`;
+        } else if (colorMode === 'random') {
+            const hue = (index * 137.5 + this._time * 20) % 360;
+            return `hsl(${hue}, 100%, 55%)`;
+        }
+        return s.baseColor || '#00ff88';
     },
     
     render() {
@@ -75,12 +99,13 @@ export const Circle2D = {
     
     _renderSolidBar(ctx, angle, baseR, length, index) {
         const s = this._settings;
+        const colorMode = s.colorMode || 'fixed';
         const x1 = Math.cos(angle) * baseR;
         const y1 = Math.sin(angle) * baseR;
         const x2 = Math.cos(angle) * (baseR + length);
         const y2 = Math.sin(angle) * (baseR + length);
         
-        if (s.gradientEnabled && s.gradientStops >= 2) {
+        if (colorMode === 'gradient' && s.gradientStops >= 2) {
             const grad = ctx.createLinearGradient(x1, y1, x2, y2);
             for (let i = 0; i < s.gradientStops; i++) {
                 const pos = Math.pow(i / (s.gradientStops - 1), 1 / (s.gradientScalar || 1));
@@ -89,7 +114,8 @@ export const Circle2D = {
             }
             ctx.strokeStyle = grad;
         } else {
-            ctx.strokeStyle = this._hexToRgba(s.baseColor, this._getAlphaAt(0.5));
+            const color = this._getColorForPosition(0.5, index);
+            ctx.strokeStyle = this._hexToRgba(color, this._getAlphaAt(0.5));
         }
         
         ctx.lineWidth = 3;
@@ -104,6 +130,7 @@ export const Circle2D = {
         const segH = s.segmentHeight || 8;
         const segGap = s.segmentGap || 2;
         const segments = Math.ceil(length / (segH + segGap));
+        const colorMode = s.colorMode || 'fixed';
         
         for (let seg = 0; seg < segments; seg++) {
             const r1 = baseR + seg * (segH + segGap);
@@ -111,16 +138,8 @@ export const Circle2D = {
             if (r2 > baseR + length) continue;
             
             const t = seg / Math.max(segments - 1, 1);
-            
-            if (s.gradientEnabled && s.gradientStops >= 2) {
-                const colorIndex = Math.floor(t * (s.gradientStops - 1));
-                const nextIndex = Math.min(colorIndex + 1, s.gradientStops - 1);
-                const localT = (t * (s.gradientStops - 1)) - colorIndex;
-                const color = this._lerpColor(s.colorStops[colorIndex], s.colorStops[nextIndex], localT);
-                ctx.fillStyle = this._hexToRgba(color, this._getAlphaAt(t));
-            } else {
-                ctx.fillStyle = this._hexToRgba(s.baseColor, this._getAlphaAt(t));
-            }
+            const color = this._getColorForPosition(t, index);
+            ctx.fillStyle = this._hexToRgba(color, this._getAlphaAt(t));
             
             const arcWidth = (Math.PI * 2 / this._barCount) * 0.7;
             ctx.beginPath();
@@ -158,10 +177,13 @@ export const Circle2D = {
         this._audio = null;
     },
     
-    _hexToRgba(hex, alpha) {
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
+    _hexToRgba(color, alpha) {
+        if (color.startsWith('hsl')) {
+            return color.replace('hsl(', 'hsla(').replace(')', `, ${alpha})`);
+        }
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
         return `rgba(${r},${g},${b},${alpha})`;
     }
 };

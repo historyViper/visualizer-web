@@ -30,9 +30,11 @@ export const Parabola = {
     
     update(dt, audioFrame) {
         this._audioParams = audioFrame.audioParams;
-        const bands = this._audio.getLogBands(8, this._audioParams);
+        if (!this._audioParams) return;
         
-        // Audio modulates the phase and frequencies
+        const bands = this._audio.getLogBands(8, this._audioParams);
+        if (!bands) return;
+        
         const bass = (bands[0] + bands[1]) / 2;
         const mid = (bands[2] + bands[3] + bands[4]) / 3;
         const high = (bands[5] + bands[6] + bands[7]) / 3;
@@ -50,7 +52,11 @@ export const Parabola = {
         const cx = w / 2;
         const cy = h / 2;
         
+        if (!this._audioParams || !this._audio) return;
+        
         const bands = this._audio.getLogBands(32, this._audioParams);
+        if (!bands || bands.length === 0) return;
+        
         const avgLevel = bands.reduce((a, b) => a + b, 0) / bands.length;
         
         const scaleX = w * 0.35 * (0.8 + avgLevel * 0.4);
@@ -63,7 +69,6 @@ export const Parabola = {
             ctx.shadowBlur = s.glowAmount * 30;
         }
         
-        // Draw multiple Lissajous curves with slight variations
         const curves = 3;
         for (let c = 0; c < curves; c++) {
             const phaseOffset = c * 0.3;
@@ -75,10 +80,9 @@ export const Parabola = {
             const points = 500;
             for (let i = 0; i <= points; i++) {
                 const t = (i / points) * Math.PI * 2;
-                const bandIdx = Math.floor((i / points) * 31);
-                const audioMod = 1 + bands[bandIdx] * 0.2;
+                const bandIdx = Math.floor((i / points) * Math.min(31, bands.length - 1));
+                const audioMod = 1 + (bands[bandIdx] || 0) * 0.2;
                 
-                // Lissajous: x = A*sin(a*t + delta), y = B*sin(b*t)
                 const a = this._freqX + freqOffset;
                 const b = this._freqY + freqOffset;
                 const delta = this._phase + phaseOffset;
@@ -98,7 +102,7 @@ export const Parabola = {
             
             const alpha = 1 - c * 0.25;
             
-            if (s.gradientEnabled && s.gradientStops >= 2) {
+            if (s.colorMode === 'gradient' && s.gradientStops >= 2) {
                 const grad = ctx.createLinearGradient(cx - scaleX, cy, cx + scaleX, cy);
                 for (let i = 0; i < s.gradientStops; i++) {
                     const pos = i / (s.gradientStops - 1);
@@ -106,28 +110,27 @@ export const Parabola = {
                 }
                 ctx.strokeStyle = grad;
             } else {
-                ctx.strokeStyle = this._hexToRgba(s.baseColor, alpha);
+                ctx.strokeStyle = this._hexToRgba(s.baseColor || '#00ff88', alpha);
             }
             
             ctx.lineWidth = 2 - c * 0.5;
             ctx.stroke();
         }
         
-        // Draw reactive nodes at key points
         const nodeCount = 8;
         for (let i = 0; i < nodeCount; i++) {
             const t = (i / nodeCount) * Math.PI * 2;
             const x = cx + Math.sin(this._freqX * t + this._phase) * scaleX;
             const y = cy + Math.sin(this._freqY * t) * scaleY;
             
-            const bandIdx = Math.floor((i / nodeCount) * 7);
-            const size = 4 + bands[bandIdx] * 20;
+            const bandIdx = Math.floor((i / nodeCount) * Math.min(7, bands.length - 1));
+            const size = 4 + (bands[bandIdx] || 0) * 20;
             
-            if (s.gradientEnabled && s.gradientStops >= 2) {
+            if (s.colorMode === 'gradient' && s.gradientStops >= 2) {
                 const colorIdx = Math.floor((i / nodeCount) * (s.gradientStops - 1));
                 ctx.fillStyle = s.colorStops[colorIdx];
             } else {
-                ctx.fillStyle = s.baseColor;
+                ctx.fillStyle = s.baseColor || '#00ff88';
             }
             
             ctx.beginPath();
@@ -144,9 +147,13 @@ export const Parabola = {
     },
     
     _hexToRgba(hex, alpha) {
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
+        if (!hex || typeof hex !== 'string') return `rgba(0,255,136,${alpha})`;
+        if (hex.startsWith('hsl')) {
+            return hex.replace('hsl(', 'hsla(').replace(')', `, ${alpha})`);
+        }
+        const r = parseInt(hex.slice(1, 3), 16) || 0;
+        const g = parseInt(hex.slice(3, 5), 16) || 255;
+        const b = parseInt(hex.slice(5, 7), 16) || 136;
         return `rgba(${r},${g},${b},${alpha})`;
     }
 };

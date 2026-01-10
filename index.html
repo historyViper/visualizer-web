@@ -253,7 +253,17 @@
             <div class="accordion-content">
                 <div class="control-row">
                     <label>Type</label>
-                    <select id="vis-select"></select>
+                    <select id="vis-select">
+                        <option value="bars2d">2D Spectrum Bars</option>
+                        <option value="circle2d">2D Circle Spectrum</option>
+                        <option value="plasma2d">Plasma Lightning</option>
+                        <option value="bars3d">3D Spectrum Bars</option>
+                        <option value="circle3d">3D Circle Spectrum</option>
+                        <option value="lorenz">Lorenz Attractor</option>
+                        <option value="spiral">Golden Spiral</option>
+                        <option value="mandelbrot">Mandelbrot</option>
+                        <option value="parabola">Lissajous Curves</option>
+                    </select>
                 </div>
                 <div class="control-row">
                     <label>Bar Mode</label>
@@ -280,15 +290,6 @@
                     <select id="plasma-mode">
                         <option value="arcs">Lightning Arcs</option>
                         <option value="ball">Plasma Ball</option>
-                    </select>
-                </div>
-                <div class="control-row">
-                    <label>Plasma Colors</label>
-                    <select id="plasma-color-mode">
-                        <option value="cycle">Rainbow Cycle</option>
-                        <option value="fixed">Fixed Color</option>
-                        <option value="gradient">Use Gradient</option>
-                        <option value="random">True Random</option>
                     </select>
                 </div>
             </div>
@@ -342,14 +343,32 @@
             </div>
         </div>
         
-        <!-- Color Gradient Section -->
+        <!-- Color Section -->
         <div class="accordion-section">
-            <div class="accordion-header">Color Gradient</div>
+            <div class="accordion-header">Color</div>
             <div class="accordion-content">
-                <div class="control-row inline-row">
-                    <label>Enable Gradient</label>
-                    <input type="checkbox" id="gradient-toggle">
+                <div class="control-row">
+                    <label>Color Mode</label>
+                    <select id="color-mode">
+                        <option value="fixed">Fixed Color</option>
+                        <option value="gradient">Gradient</option>
+                        <option value="cycle">Rainbow Cycle</option>
+                        <option value="random">Random</option>
+                    </select>
                 </div>
+                <div class="control-row inline-row">
+                    <label>Base Color</label>
+                    <input type="color" id="base-color" value="#00ff88">
+                </div>
+                <div class="control-row inline-row">
+                    <label>Background</label>
+                    <input type="color" id="bg-color" value="#0a0a0f">
+                </div>
+                <div class="control-row">
+                    <label>Glow: <span id="glow-val">0</span></label>
+                    <input type="range" id="glow-amount" min="0" max="1" step="0.05" value="0">
+                </div>
+                <hr style="border-color:#333;margin:10px 0">
                 <div class="control-row">
                     <label>Gradient Stops</label>
                     <select id="gradient-stops">
@@ -399,25 +418,6 @@
                 <div class="control-row">
                     <label>Alpha Scalar: <span id="alpha-scalar-val">1.0</span></label>
                     <input type="range" id="alpha-scalar" min="0.1" max="3" step="0.1" value="1">
-                </div>
-            </div>
-        </div>
-        
-        <!-- Style Section -->
-        <div class="accordion-section">
-            <div class="accordion-header">Style</div>
-            <div class="accordion-content">
-                <div class="control-row inline-row">
-                    <label>Base Color (Solid)</label>
-                    <input type="color" id="base-color" value="#00ff88">
-                </div>
-                <div class="control-row inline-row">
-                    <label>Background</label>
-                    <input type="color" id="bg-color" value="#0a0a0f">
-                </div>
-                <div class="control-row">
-                    <label>Glow: <span id="glow-val">0</span></label>
-                    <input type="range" id="glow-amount" min="0" max="1" step="0.05" value="0">
                 </div>
             </div>
         </div>

@@ -104,11 +104,11 @@ export const Plasma2D = {
         
         // Color based on mode
         let color;
-        const colorMode = s.plasmaColorMode || 'cycle';
+        const colorMode = s.colorMode || 'cycle';
         
         if (colorMode === 'fixed') {
             color = s.baseColor || '#00ff88';
-        } else if (colorMode === 'gradient' && s.gradientEnabled) {
+        } else if (colorMode === 'gradient') {
             const idx = Math.floor(freqNorm * s.gradientStops);
             color = s.colorStops[Math.min(idx, s.colorStops.length - 1)];
         } else if (colorMode === 'random') {
@@ -172,9 +172,9 @@ export const Plasma2D = {
         ctx.fillRect(0, 0, this._width, this._height);
         ctx.globalAlpha = 1;
         
-        // Heavy glow effect
-        const glowAmount = Math.max(s.glowAmount || 0.5, 0.3);
-        ctx.shadowBlur = 20 + glowAmount * 40;
+        // Heavy glow effect - always strong for plasma
+        const glowAmount = Math.max(s.glowAmount || 0.5, 0.5);
+        ctx.shadowBlur = 40 + glowAmount * 60;
         
         // Draw all arcs
         for (const arc of this._arcs) {

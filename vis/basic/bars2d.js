@@ -13,11 +13,14 @@ export const Bars2D = {
     _height: 0,
     _barCount: 64,
     _audioParams: null,
+    _time: 0,
+    _hueOffset: 0,
     
     init(ctx, services, settings) {
         this._ctx = ctx.ctx2d;
         this._settings = settings;
         this._audio = services.audio;
+        this._hueOffset = Math.random() * 360;
     },
     
     resize(w, h) {
@@ -27,6 +30,27 @@ export const Bars2D = {
     
     update(dt, audioFrame) {
         this._audioParams = audioFrame.audioParams;
+        this._time += dt;
+        this._hueOffset = (this._hueOffset + dt * 30) % 360;
+    },
+    
+    _getColorForPosition(t, index) {
+        const s = this._settings;
+        const colorMode = s.colorMode || 'fixed';
+        
+        if (colorMode === 'gradient' && s.gradientStops >= 2) {
+            const colorIndex = Math.floor(t * (s.gradientStops - 1));
+            const nextIndex = Math.min(colorIndex + 1, s.gradientStops - 1);
+            const localT = (t * (s.gradientStops - 1)) - colorIndex;
+            return this._lerpColor(s.colorStops[colorIndex], s.colorStops[nextIndex], localT);
+        } else if (colorMode === 'cycle') {
+            const hue = (this._hueOffset + index * 5 + t * 60) % 360;
+            return `hsl(${hue}, 100%, 55%)`;
+        } else if (colorMode === 'random') {
+            const hue = (index * 137.5 + this._time * 20) % 360;
+            return `hsl(${hue}, 100%, 55%)`;
+        }
+        return s.baseColor || '#00ff88';
     },
     
     render() {
@@ -64,8 +88,9 @@ export const Bars2D = {
     
     _renderSolidBar(ctx, x, y, w, h, index) {
         const s = this._settings;
+        const colorMode = s.colorMode || 'fixed';
         
-        if (s.gradientEnabled && s.gradientStops >= 2) {
+        if (colorMode === 'gradient' && s.gradientStops >= 2) {
             const grad = ctx.createLinearGradient(x, this._height, x, y);
             const stops = s.gradientStops;
             for (let i = 0; i < stops; i++) {
@@ -75,7 +100,8 @@ export const Bars2D = {
             }
             ctx.fillStyle = grad;
         } else {
-            ctx.fillStyle = this._hexToRgba(s.baseColor, this._getAlphaAt(0.5));
+            const color = this._getColorForPosition(0.5, index);
+            ctx.fillStyle = this._hexToRgba(color, this._getAlphaAt(0.5));
         }
         
         ctx.fillRect(x, y, w, h);
@@ -86,22 +112,15 @@ export const Bars2D = {
         const segH = s.segmentHeight || 8;
         const segGap = s.segmentGap || 2;
         const segments = Math.ceil(barH / (segH + segGap));
+        const colorMode = s.colorMode || 'fixed';
         
         for (let seg = 0; seg < segments; seg++) {
             const segY = this._height - (seg + 1) * (segH + segGap);
             if (segY < y) continue;
             
             const t = seg / Math.max(segments - 1, 1);
-            
-            if (s.gradientEnabled && s.gradientStops >= 2) {
-                const colorIndex = Math.floor(t * (s.gradientStops - 1));
-                const nextIndex = Math.min(colorIndex + 1, s.gradientStops - 1);
-                const localT = (t * (s.gradientStops - 1)) - colorIndex;
-                const color = this._lerpColor(s.colorStops[colorIndex], s.colorStops[nextIndex], localT);
-                ctx.fillStyle = this._hexToRgba(color, this._getAlphaAt(t));
-            } else {
-                ctx.fillStyle = this._hexToRgba(s.baseColor, this._getAlphaAt(t));
-            }
+            const color = this._getColorForPosition(t, index);
+            ctx.fillStyle = this._hexToRgba(color, this._getAlphaAt(t));
             
             if (s.roundedBlocks) {
                 this._roundRect(ctx, x, segY, barW, segH, 2);
@@ -153,10 +172,14 @@ export const Bars2D = {
         this._audio = null;
     },
     
-    _hexToRgba(hex, alpha) {
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
+    _hexToRgba(color, alpha) {
+        if (color.startsWith('hsl')) {
+            // Extract HSL values and convert to HSLA
+            return color.replace('hsl(', 'hsla(').replace(')', `, ${alpha})`);
+        }
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
         return `rgba(${r},${g},${b},${alpha})`;
     }
 };

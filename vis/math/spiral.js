@@ -40,6 +40,8 @@ export const Spiral = {
         const cx = w / 2;
         const cy = h / 2;
         
+        if (!this._audioParams) return;
+        
         const bands = this._audio.getLogBands(64, this._audioParams);
         const maxRadius = Math.min(w, h) * 0.45;
         const goldenRatio = 1.618033988749;
